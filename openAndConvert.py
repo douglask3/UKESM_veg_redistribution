@@ -36,7 +36,7 @@ stash_contraint = iris.AttributeConstraint(STASH='m01s00i216')
 i = exp_dir
 dir = dat_dir + i
 
-map_points = [1, 2]
+map_points = [1, 21]
 
 git = 'repo: ' + git_info.url + '\n' + 'rev:  ' + git_info.rev
 
@@ -45,8 +45,8 @@ crs_proj   = ccrs.Robinson()
 cmap1 = mpl_cm.get_cmap('brewer_YlGn_09')
 cmap2 = mpl_cm.get_cmap('brewer_PRGn_11')
 
-def plot_map(fig, px, py, dat, pn, limits, cmap, title = 'yay', extend = 'max'):
-    norm = colours.BoundaryNorm(boundaries = limits, ncolors = 8)
+def plot_map(fig, px, py, dat, pn, limits, cmap, title = 'yay', extend = 'max', ncolors = 8):
+    norm = colours.BoundaryNorm(boundaries = limits, ncolors = ncolors)
     
     ax = fig.add_subplot(px, py, pn, projection = crs_proj)
     ax.set_extent((-180, 170, -65, 90.0), crs = crs_latlon)
@@ -55,13 +55,15 @@ def plot_map(fig, px, py, dat, pn, limits, cmap, title = 'yay', extend = 'max'):
     
     plt.gca().coastlines()
     if (len(dat.shape) == 3 and dat.shape[0] == 1): dat = dat[0]
-    cbi = qplt.contourf(dat, limits, cmap = cmap, extend = extend, norm = norm) 
+    
+    cbi = qplt.contourf(dat, limits, cmap = cmap, extend = extend, norm = norm)
+    plt.title(title)   
     #qplt.contourf(dat) 
     #plt.colorbar(cbi)
     #titlei = title + labs[i][0]  
-    plt.title(title)
+    
 
-def plot_fracs(cube, fig_out, sub_title, limits, cmap, *args):
+def plot_fracs(cube, fig_out, sub_title, limits, cmap, ncolors, cube0 = None):
     figsize = (28, 12)
     px = 5
     py = 4
@@ -70,9 +72,15 @@ def plot_fracs(cube, fig_out, sub_title, limits, cmap, *args):
     index  = pft_names.keys()
     points = cube[0].coord('pseudo_level').points    
     for x in range(0, len(pft_names)):
-        i  = index[x]
-        ii = np.where(points == i)[0]
-        plot_map(fig, px, py, cube[0][ii], x  + 1, limits, cmap, title = pft_names[i], *args)
+        i  = plot_order[x]
+        ii = x#np.where(points == i)[0]
+        browser()
+        print(pft_names[i])
+        if (cube0 is None):
+            z = cube[0][ii]
+        else:
+            z = cube[0][ii] - cube0[0][ii]
+        plot_map(fig, px, py, cube[0][ii], x  + 1, limits, cmap, title = pft_names[i], ncolors = ncolors)
         
     fig.suptitle(sub_title, fontsize = 16)
 
@@ -81,27 +89,60 @@ def plot_fracs(cube, fig_out, sub_title, limits, cmap, *args):
 
 p = 0
 test = False
-input_files = ['af398a.da19781201_00', 'af398a.da19931201_00']
+input_files = sort(listdir(dir))
+cover =np.zeros((len(pft_names),len(input_files)))
+ 
 for input_file in input_files:
     file_in = dir + input_file
+    print(file_in)
     file_out = out_dir + input_file + '.nc'
     fig1_out = fig_dir + input_file + '.pdf'
     fig2_out = fig_dir + input_file + 'diff' + '.pdf'
-
     cube = iris.load(file_in, stash_contraint)
    
     p = p + 1
     if (True in [p == i for i in map_points]):
-        plot_fracs(cube, fig1_out, input_file, limits = [0, 0.0001, 0.001, 0.01, 0.1, 0.2, 0.5, 1], cmap = cmap1)       
+        plot_fracs(cube, fig1_out, input_file, limits = [0, 0.0001, 0.001, 0.01, 0.1, 0.2, 0.5, 1], cmap = cmap1, ncolors = 8)       
         cube0 = cube
         input_file0 = input_file
                 
         if test:            
             limits = [-0.1, -0.01, -0.001, -0.0001, 0.0001, 0.001, 0.01, 0.1]
             sub_title = input_file + ' - ' + input_file0
-            plot_fracs(cube, fig2_out, sub_title, limits = limits, cmap = cmap2)            
+            
+            plot_fracs(cube, fig2_out, sub_title, limits = limits, cmap = cmap2, ncolors = 12, cube0 = cube0)            
         
         test = True
-       
+    
+    
+    area =  iris.analysis.cartography.cosine_latitude_weights(cube[0][0])
+    area = area / sum(area[cube[0][0].data.mask])
+   
+    for pft in range(0, len(pft_names)): cover[pft, p - 1] = sum(cube[0][pft].data * area)
+   
 #yay = iris.load('/localscratch/wllf011/rjel/ae048.astart', stash_contraint)
 #iris.save(yay, 'yay.nc')
+
+
+figsize = (28, 12)
+px = 5
+py = 4
+fig = plt.figure(figsize = figsize)
+index  = pft_names.keys()
+points = cube[0].coord('pseudo_level').points
+
+for x in range(0, 17):
+    i  = plot_order[x]
+    ii = np.where(points == i)[0]
+    ax = fig.add_subplot(px, py, x + 1)
+    #plt.subplots_adjust(left=1, bottom=2, right=2, top=4)
+    ax.get_xaxis().get_major_formatter().set_scientific(False)
+    plt.plot(range(1979, 1979 + len(input_files)),100 *cover[ii,].flatten() / 0.29)
+    #
+    ax.text(.5,.9,pft_names[i],
+        horizontalalignment='center',
+        transform=ax.transAxes)
+
+
+plt.savefig('figs/TS.pdf', bbox_inches = 'tight')    
+
